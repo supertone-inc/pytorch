@@ -22,6 +22,16 @@ static void assign_storage_to_managed_tensors(
       auto& ival = pnode.Output(i);
       const auto* val = pnode.node()->outputs()[i];
       if (managed_tensor_values.count(val)) {
+        // Heuristic and special case:
+        // If to_maybe_copy_out did not actually do anything in the
+        // first iteration, assume it will continue to not do anything
+        // and avoid managing its output.
+        static const auto to_maybe_copy_out_symbol =
+            c10::Symbol::fromQualString("static_runtime::to_maybe_copy_out");
+        if (pnode.node()->kind() == to_maybe_copy_out_symbol && ival.isNone()) {
+          continue;
+        }
+
         TORCH_CHECK(ival.isTensor());
         at::Tensor* tensor = &ival.toTensor();
         auto f = value_to_storage_idx.find(val);
