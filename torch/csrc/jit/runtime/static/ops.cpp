@@ -1037,61 +1037,80 @@ REGISTER_OPERATOR_FUNCTOR(aten::pow, aten_pow, [](Node* n) -> SROperator {
 });
 
 namespace {
+template <bool has_constant_non_tensor_dtype_and_flags, bool has_memory_format>
 void to_copy_functor(ProcessedNode* p_node) {
-        const auto& self = p_node->Input(0).toTensor();
-        // ignore input 3 (copy)
-        auto non_blocking = p_node->Input(2).toBool(); // non_blocking
-        // handle memory format
-        bool copy_strides = false;
-        c10::optional<c10::MemoryFormat> memory_format = c10::nullopt;
-        if (p_node->inputs().size() == 5) {
-          memory_format = p_node->Input(4).toOptional<c10::MemoryFormat>();
-        }
-        memory_format = memory_format.value_or(c10::MemoryFormat::Preserve);
+  const auto& self = p_node->Input(0).toTensor();
+  // ignore input 3 (copy)
+  auto non_blocking = p_node->Input(2).toBool(); // non_blocking
+  // handle memory format
+  bool copy_strides = false;
+  c10::optional<c10::MemoryFormat> memory_format;
+  if (has_memory_format) {
+    memory_format = p_node->Input(4).toOptional<c10::MemoryFormat>().value_or(
+        c10::MemoryFormat::Preserve);
+  } else {
+    memory_format = c10::MemoryFormat::Preserve;
+  }
 
-        if (p_node->Output(0).isNone()) {
-          // handle dtype, layout, and device
-          c10::optional<at::ScalarType> dtype;
-          c10::Layout layout = self.layout();
-          c10::Device device = self.device();
-          if (p_node->Input(1).isTensor()) {
-            const auto& other = p_node->Input(1).toTensor();
-            dtype = other.scalar_type();
-            layout = other.layout();
-            device = other.device();
-          } else {
-            dtype = p_node->Input(1).toOptional<at::ScalarType>();
-          }
+  if (!has_constant_non_tensor_dtype_and_flags || p_node->Output(0).isNone()) {
+    // handle dtype, layout, and device
+    c10::optional<at::ScalarType> dtype;
+    c10::Layout layout = self.layout();
+    c10::Device device = self.device();
+    if (p_node->Input(1).isTensor()) {
+      const auto& other = p_node->Input(1).toTensor();
+      dtype = other.scalar_type();
+      layout = other.layout();
+      device = other.device();
+    } else {
+      dtype = p_node->Input(1).toOptional<at::ScalarType>();
+    }
 
-          if (memory_format == c10::MemoryFormat::Preserve) {
-            if (self.is_non_overlapping_and_dense()) {
-              memory_format = c10::nullopt;
-              copy_strides = true;
-            } else {
-              memory_format = self.suggest_memory_format();
-            }
-          }
-
-          // See Note [Explicit nullopt MemoryFormat argument]
-          // Can't use size {0} if memory_format is ChannelLast
-          p_node->Output(0) = at::detail::empty_cpu(
-              self.sizes(),
-              dtype,
-              layout,
-              self.device(),
-              c10::nullopt,
-              memory_format);
-        }
-
-        copy_strides = copy_strides ||
-            (memory_format == c10::MemoryFormat::Preserve &&
-             self.is_non_overlapping_and_dense());
-
-        auto& out_t = p_node->Output(0).toTensor();
-        fastResizeToZero(out_t);
-        at::native::to_copy_out(
-            out_t, self, non_blocking, copy_strides, memory_format);
+    if (memory_format == c10::MemoryFormat::Preserve) {
+      if (self.is_non_overlapping_and_dense()) {
+        memory_format = c10::nullopt;
+        copy_strides = true;
+      } else {
+        memory_format = self.suggest_memory_format();
       }
+    }
+
+    bool need_to_allocate_output = true;
+    if (p_node->Output(0).isTensor()) {
+      const auto& existing_output = p_node->Output(0).toTensor();
+      if (existing_output.dtype() != dtype ||
+          existing_output.layout() != layout ||
+          existing_output.device() != self.device() ||
+          !existing_output.is_contiguous(
+              memory_format.value_or(c10::MemoryFormat::Contiguous))) {
+        need_to_allocate_output = true;
+      } else {
+        need_to_allocate_output = false;
+      }
+    }
+
+    // See Note [Explicit nullopt MemoryFormat argument]
+    // Can't use size {0} if memory_format is ChannelLast
+    if (need_to_allocate_output) {
+      p_node->Output(0) = at::detail::empty_cpu(
+          self.sizes(),
+          dtype,
+          layout,
+          self.device(),
+          c10::nullopt,
+          memory_format);
+    }
+  }
+
+  copy_strides = copy_strides ||
+      (memory_format == c10::MemoryFormat::Preserve &&
+       self.is_non_overlapping_and_dense());
+
+  auto& out_t = p_node->Output(0).toTensor();
+  fastResizeToZero(out_t);
+  at::native::to_copy_out(
+      out_t, self, non_blocking, copy_strides, memory_format);
+}
 } // namespace
 
 // out variant takes precedence over native
@@ -1103,7 +1122,26 @@ REGISTER_OPERATOR_FUNCTOR(
       // support 4- or 5-arg for adindexer/adfinder models
       // Keep TORCH_CHECK here because there is no alternative for fallback
       TORCH_CHECK(n->inputs().size() == 4 || n->inputs().size() == 5);
-      return to_copy_functor;
+      const auto* input1 = n->inputs()[1];
+      const bool has_constant_non_tensor_dtype_and_flags =
+          input1->type()->kind() != TypeKind::TensorType &&
+          input1->node()->kind() == prim::Constant &&
+          n->inputs()[2]->node()->kind() == prim::Constant &&
+          n->inputs()[3]->node()->kind() == prim::Constant;
+      const bool has_memory_format = n->inputs().size() == 5;
+      if (has_constant_non_tensor_dtype_and_flags) {
+        if (has_memory_format) {
+          return to_copy_functor<true, true>;
+        } else {
+          return to_copy_functor<true, false>;
+        }
+      } else {
+        if (has_memory_format) {
+          return to_copy_functor<false, true>;
+        } else {
+          return to_copy_functor<false, false>;
+        }
+      }
     });
 
 // Out variants for view ops are registered to a separate registry because
