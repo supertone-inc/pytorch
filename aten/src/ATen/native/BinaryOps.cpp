@@ -613,6 +613,31 @@ Tensor& mul_(Tensor& self, const Scalar& other) {
   return at::mul_out(self, wrapped_scalar_tensor(other), self); // redispatch!
 }
 
+void size_and_device_check(const Tensor& self, const Tensor& other) {
+  // if one of the self or other is a Scalar Tensor
+  if (!(self.sizes().size() == 0 || other.sizes().size() == 0)) {
+    TORCH_CHECK(self.sizes() == other.sizes());
+  }
+  TORCH_CHECK(self.device() == other.device());
+}
+
+Tensor mul_zerotensor(const Tensor& self, const Tensor& other) {
+  size_and_device_check(self, other);
+  auto commonDtype = at::result_type(self, other);
+  auto result_options = self.options().dtype(commonDtype);
+  return at::_efficientzerotensor(self.sizes(), result_options);
+}
+
+Tensor add_zerotensor(const Tensor& self, const Tensor& other, const Scalar& alpha) {
+  size_and_device_check(self, other);
+  auto commonDtype = at::result_type(self, other);
+  if (self.is_zerotensor()) {
+    return (commonDtype == other.scalar_type()) ? other.mul(alpha) : other.to(commonDtype).mul(alpha);
+  } else {
+    return (commonDtype == self.scalar_type()) ? self.clone() : self.to(commonDtype);
+  }
+}
+
 // multiply, alias for mul
 Tensor& multiply_out(const Tensor& self, const Tensor& other, Tensor& result) {
   return at::mul_out(result, self, other);
