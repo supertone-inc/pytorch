@@ -5587,7 +5587,6 @@ class TestQuantizeFxModels(QuantizationTestCase):
         quantized_model_list = set(quantized_model_list)
         # test eager and graph consistency
         model_list = quantized_model_list
-        model_list = set(model_list)
         # mobilenet/inception_v3/googlenet qat is not working due to AdaptiveAveragePool qat
         # we might observe the output of AdaptiveAveragePool in the future
         # and re-enable the test
