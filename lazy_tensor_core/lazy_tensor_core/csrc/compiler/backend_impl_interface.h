@@ -37,8 +37,8 @@ class BackendImplInterface {
       const at::Tensor& tensor, const lazy_tensors::Shape& shape,
       const Device& device) const = 0;
 
-  virtual BackendDataPtr CreateDataPlaceholder(const Device& device,
-      const lazy_tensors::Shape& shape) const = 0;
+  virtual BackendDataPtr CreateDataPlaceholder(
+      const Device& device, const lazy_tensors::Shape& shape) const = 0;
 
   virtual at::Tensor MakeTensorFromComputationData(
       const BackendDataPtr data,
@@ -72,29 +72,33 @@ class BackendImplInterface {
    * */
 
   // Set or get the default device type.
-  // For backends used with virtual c10:: Devices, this configures what real device type
-  // the backend should use, and matters if the backend supports more than one type of real
-  // device.
-  virtual torch_lazy_tensors::BackendDeviceType GetDefaultDeviceType() const = 0;
-  virtual void SetDefaultDeviceType(std::string) const = 0;
+  // For backends used with virtual c10:: Devices, this configures what real
+  // device type the backend should use, and matters if the backend supports
+  // more than one type of real device.
+  virtual std::shared_ptr<torch_lazy_tensors::BackendDeviceType>
+  GetDefaultDeviceType() const = 0;
+  virtual void SetDefaultDeviceType(std::string) = 0;
 
   // Query all available backend devices
-  virtual std::vector<torch_lazy_tensors::BackendDevice> GetBackendDevices() const = 0;
+  virtual std::vector<torch_lazy_tensors::Device> GetBackendDevices() const = 0;
 
   // Map a particular c10:: device to a concrete backend device
-  // Note:: c10:: devices may be virtual or concrete.  xla:: and lazy:: are virtual
-  // devices, meaning they may map to a gpu, tpu, etc. behind the scenes.
-  // In the future, non-virtual c10:: devices may also use lazy tensors through a mode,
-  // in which case these APIs should still work, but should be identity mappings.
-  virtual torch_lazy_tensors::BackendDevice GetBackendDevice(c10::Device device) const = 0;
+  // Note:: c10:: devices may be virtual or concrete.  xla:: and lazy:: are
+  // virtual devices, meaning they may map to a gpu, tpu, etc. behind the
+  // scenes. In the future, non-virtual c10:: devices may also use lazy tensors
+  // through a mode, in which case these APIs should still work, but should be
+  // identity mappings.
+  virtual torch_lazy_tensors::Device GetBackendDevice(
+      c10::Device device) const = 0;
 
-
-  // TODO(whc) can we remove this?  we are using it for Conv, Empty ops in TS backend, to do
-  // cuda-specific things.  This is the kind of thing we wanted to avoid at this layer.
+  // TODO(whc) can we remove this?  we are using it for Conv, Empty ops in TS
+  // backend, to do cuda-specific things.  This is the kind of thing we wanted
+  // to avoid at this layer.
   virtual at::DeviceType HardwareDeviceType() const = 0;
 
   // TODO(whc)
-  // Additional APIs expected for supporting distributed training, to be designed
+  // Additional APIs expected for supporting distributed training, to be
+  // designed
 
   /**
    * Debug/Metrics

@@ -8,6 +8,23 @@
 namespace torch_lazy_tensors {
 namespace compiler {
 
+struct TSBackendDeviceType : public BackendDeviceType {
+  TSBackendDeviceType(c10::DeviceType deviceType) {
+    TORCH_CHECK(supported_device_types_.find((int8_t)deviceType) !=
+                supported_device_types_.end());
+    type = (int8_t)deviceType;
+  }
+
+  std::string toString() const override {
+    return c10::DeviceTypeName((c10::DeviceType)type);
+  }
+
+ private:
+  static const std::set<int8_t> supported_device_types_;
+};
+const std::set<int8_t> TSBackendDeviceType::supported_device_types_ = {
+    (int8_t)at::kCPU, (int8_t)at::kCUDA};
+
 class TSBackendImpl : public BackendImplInterface {
  public:
   std::unique_ptr<ir::LoweringContext> CreateLoweringContext(
@@ -54,6 +71,7 @@ class TSBackendImpl : public BackendImplInterface {
   //////////////computation client interfaces///////////////////////
 
  public:
+  // TODO(whc) why did I put this inside the class?  move it out?
   class TSData : public BackendData {
    public:
     TSData(const at::Tensor& data, const lazy_tensors::Shape& shape,
@@ -79,8 +97,8 @@ class TSBackendImpl : public BackendImplInterface {
     at::Tensor data_;
   };
 
-  BackendDataPtr CreateDataPlaceholder(const Device& device,
-      const lazy_tensors::Shape& shape) const override;
+  BackendDataPtr CreateDataPlaceholder(
+      const Device& device, const lazy_tensors::Shape& shape) const override;
 
   std::vector<ComputationPtr> Compile(
       std::vector<ComputationPtr> instances) const override;
@@ -89,19 +107,19 @@ class TSBackendImpl : public BackendImplInterface {
       Computation& computation, c10::ArrayRef<BackendDataPtr> arguments,
       const Device& device) const override;
 
-  std::string GetDefaultDevice() const override;
+  std::shared_ptr<torch_lazy_tensors::BackendDeviceType> GetDefaultDeviceType()
+      const override {
+    return std::make_shared<BackendDeviceType>(default_device_type_);
+  }
 
-  size_t GetNumDevices() const override { return 1; }
+  void SetDefaultDeviceType(std::string type) override {
+    default_device_type_ = TSBackendDeviceType(c10::Device(type).type());
+  }
 
-  std::vector<std::string> GetLocalDevices() const override;
+  std::vector<torch_lazy_tensors::Device> GetBackendDevices() const override;
 
-  std::vector<std::string> GetAllDevices() const override;
-
-  void SetReplicationDevices(
-      std::shared_ptr<std::vector<std::string>> devices) const override;
-
-  std::shared_ptr<std::vector<std::string>> GetReplicationDevices()
-      const override;
+  torch_lazy_tensors::Device GetBackendDevice(
+      c10::Device device) const override;
 
   void SetRngSeed(size_t seed) const override {
     LOG(FATAL) << "Not implemented yet.";
@@ -116,10 +134,13 @@ class TSBackendImpl : public BackendImplInterface {
   void PrepareToExit() const override;
 
   at::DeviceType HardwareDeviceType() const override;
+
+ private:
+  TSBackendDeviceType default_device_type_{at::kCPU};
 };
 
-BackendDataPtr TSBackendImpl::CreateDataPlaceholder(const Device& device,
-      const lazy_tensors::Shape& shape) const {
+BackendDataPtr TSBackendImpl::CreateDataPlaceholder(
+    const Device& device, const lazy_tensors::Shape& shape) const {
   return std::make_shared<TSBackendImpl::TSData>(shape, device);
 }
 
@@ -160,36 +181,19 @@ std::vector<BackendDataPtr> TSBackendImpl::ExecuteComputation(
   return results;
 }
 
-std::string TSBackendImpl::GetDefaultDevice() const {
-  switch (HardwareDeviceType()) {
-    case at::kCPU: {
-      return "CPU:0";
-    }
-    case at::kCUDA: {
-      return "GPU:0";
-    }
-    default: {
-      LOG(FATAL) << "Invalid device type";
-    }
-  }
-}
-
-std::vector<std::string> TSBackendImpl::GetLocalDevices() const {
-  return {GetDefaultDevice()};
-}
-
-std::vector<std::string> TSBackendImpl::GetAllDevices() const {
-  return GetLocalDevices();
-}
-
-void TSBackendImpl::SetReplicationDevices(
-    std::shared_ptr<std::vector<std::string>> devices) const {
-  CHECK_EQ(devices->size(), size_t(1)) << "Replication not supported yet";
-}
-
-std::shared_ptr<std::vector<std::string>> TSBackendImpl::GetReplicationDevices()
+std::vector<torch_lazy_tensors::Device> TSBackendImpl::GetBackendDevices()
     const {
-  return nullptr;
+  std::vector<torch_lazy_tensors::Device> devices;
+  // TODO(whc) figure out how to query available devices from pytorch
+  devices.emplace_back(GetBackendDevice(c10::Device(c10::kCPU, 0)));
+  devices.emplace_back(GetBackendDevice(c10::Device(c10::kCUDA, 0)));
+  return devices;
+}
+
+torch_lazy_tensors::Device TSBackendImpl::GetBackendDevice(
+    c10::Device device) const {
+  return torch_lazy_tensors::Device(
+      std::make_shared<TSBackendDeviceType>(device.type()), device.index());
 }
 
 void TSBackendImpl::PrepareToExit() const {}

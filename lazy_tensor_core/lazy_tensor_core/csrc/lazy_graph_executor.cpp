@@ -300,6 +300,16 @@ class DeviceContextArena {
     devctx->running_seed = devctx->seed;
     devctx->seed_ir_value = torch::lazy::Value();
   }
+  
+  std::vector<Device> GetActiveDevices() {
+    std::vector<Device> active_devices;
+    std::lock_guard<std::mutex> lock(lock_);
+    active_devices.reserve(device_contexts_.size());
+    for (auto& device_contexts : device_contexts_) {
+      active_devices.push_back(device_contexts.first);
+    }
+    return active_devices; 
+  }
 
  private:
   std::vector<DeviceContext*> GetAllDeviceContexts() {
@@ -438,7 +448,7 @@ void LazyGraphExecutor::MarkStep(const Device& device) {
 
 void LazyGraphExecutor::WaitDeviceOps() {
   std::set<Device> wait_devices;
-  for (auto& device_str : compiler::getBackend()->GetLocalDevices()) {
+  for (auto& device_str : DeviceContextArena::Get()->GetActiveDevices()) {
     // TODO: Remove the last use of Device(const std::string& device_spec).
     wait_devices.insert(Device(device_str));
   }

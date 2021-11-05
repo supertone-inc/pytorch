@@ -13,40 +13,6 @@ namespace torch_lazy_tensors {
 namespace bridge {
 namespace {
 
-// TODO(alanwaketan): Move it to the backend interface.
-class AtenLtcDeviceMapper {
- public:
-  static AtenLtcDeviceMapper* Get();
-
-  size_t GetDeviceOrdinal(const Device& device) const {
-    auto it = devices_ordinals_.find(device);
-    CHECK(it != devices_ordinals_.end()) << device;
-    return it->second;
-  }
-
-  const Device& GetDeviceFromOrdinal(size_t ordinal) const {
-    return devices_.at(ordinal);
-  }
-
- private:
-  AtenLtcDeviceMapper() {
-    for (auto& device_str :
-         compiler::getBackend()->GetLocalDevices()) {
-      // TODO(alanwaketan): The backend should do the mapping themselves, and construct the device accordingly.
-      devices_.emplace_back();
-      devices_ordinals_[devices_.back()] = devices_.size() - 1;
-    }
-  }
-
-  std::vector<Device> devices_;
-  std::map<Device, size_t> devices_ordinals_;
-};
-
-AtenLtcDeviceMapper* AtenLtcDeviceMapper::Get() {
-  static AtenLtcDeviceMapper* device_mapper = new AtenLtcDeviceMapper();
-  return device_mapper;
-}
-
 LTCTensorImpl* GetLtcTensorImpl(const at::Tensor& tensor) {
   return dynamic_cast<LTCTensorImpl*>(tensor.unsafeGetTensorImpl());
 }
@@ -257,12 +223,11 @@ Device AtenDeviceToLtcDevice(const c10::Device& device) {
   if (ordinal < 0) {
     return GetCurrentDevice();
   }
-  return AtenLtcDeviceMapper::Get()->GetDeviceFromOrdinal(ordinal);
+  return Device(compiler::getBackend()->GetDefaultDeviceType(), ordinal);
 }
 
 c10::Device LtcDeviceToAtenDevice(const Device& device) {
-  return c10::Device(at::kLazy,
-                     AtenLtcDeviceMapper::Get()->GetDeviceOrdinal(device));
+  return c10::Device(at::kLazy, device.ordinal());
 }
 
 std::string ToLtcString(const c10::Device& device) {
