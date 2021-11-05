@@ -192,8 +192,9 @@ std::vector<torch_lazy_tensors::Device> TSBackendImpl::GetBackendDevices()
 
 torch_lazy_tensors::Device TSBackendImpl::GetBackendDevice(
     c10::Device device) const {
-  return torch_lazy_tensors::Device(
-      std::make_shared<TSBackendDeviceType>(device.type()), device.index());
+  // Note, we ignore the device type specified by the c10::Device since it is expected to
+  // be a virtual device (lazy::), but we need to change this when we support lazy as a mode
+  return torch_lazy_tensors::Device(GetDefaultDeviceType(), device.index());
 }
 
 void TSBackendImpl::PrepareToExit() const {}
