@@ -190,6 +190,7 @@ c10::optional<Device> GetSameBackendDeviceOrUseDefault(const at::Tensor& tensor)
   return GetSameBackendDeviceOrUseDefault();
 }
 
+// TODO(whc) refactor this too; what do we want to do with 'CurrentDevice'?
 Device AtenDeviceToLtcDevice(const c10::Device& device) {
   CHECK_EQ(device.type(), at::kLazy) << device;
   int ordinal = device.has_index() ? device.index() : -1;

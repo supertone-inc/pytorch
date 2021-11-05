@@ -79,6 +79,11 @@ class BackendImplInterface {
   GetDefaultDeviceType() const = 0;
   virtual void SetDefaultDeviceType(std::string) = 0;
 
+  // Specify which aten device should be used for eager fallback
+  // may change depending on current 'Default' DeviceType
+  virtual at::DeviceType EagerFallbackDeviceType() const = 0;
+
+
   // Query all available backend devices
   virtual std::vector<torch_lazy_tensors::Device> GetBackendDevices() const = 0;
 
@@ -90,11 +95,6 @@ class BackendImplInterface {
   // identity mappings.
   virtual torch_lazy_tensors::Device GetBackendDevice(
       c10::Device device) const = 0;
-
-  // TODO(whc) can we remove this?  we are using it for Conv, Empty ops in TS
-  // backend, to do cuda-specific things.  This is the kind of thing we wanted
-  // to avoid at this layer.
-  virtual at::DeviceType HardwareDeviceType() const = 0;
 
   // TODO(whc)
   // Additional APIs expected for supporting distributed training, to be

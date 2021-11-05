@@ -190,7 +190,7 @@ LazyNativeFunctions::convolution_backward_overrideable(
     int64_t groups, std::array<bool, 3> output_mask) {
   // Lower to cudnn_convolution_backward when possbile
   if (at::globalContext().userEnabledCuDNN() &&
-      compiler::getBackend()->HardwareDeviceType() == at::kCUDA) {
+      compiler::getBackend()->EagerFallbackDeviceType() == at::kCUDA) {
     LTC_FN_COUNTER("lazy::");
     auto result = lazy_tensor_aten_ops::convolution_backward_overrideable(
         bridge::GetLtcTensor(grad_output), bridge::GetLtcTensor(input),
@@ -230,7 +230,7 @@ LazyNativeFunctions::convolution_backward_overrideable(
   CHECK(kernel_size.size() == 2 || kernel_size.size() == 3);
   // TODO(whc) make a backend API for 'getEagerFallbackDevice(lazy::Device)'?
   const at::DeviceType device_type =
-      compiler::getBackend()->HardwareDeviceType();
+      compiler::getBackend()->EagerFallbackDeviceType();
   auto backend_device = bridge::GetSameBackendDeviceOrUseDefault(grad_output);
   if (transposed) {
     at::TensorOptions options = at::TensorOptions().device(device_type);
@@ -359,7 +359,7 @@ at::Tensor LazyNativeFunctions::empty(
     c10::optional<at::Layout> layout, c10::optional<at::Device> device,
     c10::optional<bool> pin_memory,
     c10::optional<at::MemoryFormat> memory_format) {
-  const auto device_type = compiler::getBackend()->HardwareDeviceType();
+  const auto device_type = compiler::getBackend()->EagerFallbackDeviceType();
   at::TensorOptions options = at::TensorOptions()
                                   .device(c10::Device(device_type))
                                   .layout(layout)
