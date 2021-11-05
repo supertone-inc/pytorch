@@ -1,11 +1,13 @@
 import abc
 import cmath
 import collections.abc
-from typing import NamedTuple, Callable, Sequence, List, Union, Optional, Type, Tuple, Any, cast
+import contextlib
+from typing import NamedTuple, Callable, Sequence, List, Union, Optional, Type, Tuple, Any, cast, Collection
 
 import numpy as np
 
 import torch
+from torch._C import ScriptList, ScriptDict  # type: ignore[attr-defined]
 
 from ._core import _unravel_index
 
@@ -22,6 +24,8 @@ class ErrorMeta(NamedTuple):
         return self.type(msg)
 
 
+# Some analysis of tolerance by logging tests from test_torch.py can be found in
+# https://github.com/pytorch/pytorch/pull/32538.
 _DTYPE_PRECISIONS = {
     torch.float16: (0.001, 1e-5),
     torch.bfloat16: (0.016, 1e-5),
@@ -187,8 +191,16 @@ class Pair(abc.ABC):
         self._unknown_parameters = unknown_parameters
 
     @staticmethod
-    def _check_inputs_isinstance(*inputs: Any, cls: Union[Type, Tuple[Type, ...]]):
+    def _check_inputs_isinstance(
+        *inputs: Any, cls: Union[Type, Tuple[Type, ...]], not_cls: Optional[Union[Type, Tuple[Type, ...]]] = None
+    ) -> None:
         if not all(isinstance(input, cls) for input in inputs):
+            raise UnsupportedInputs()
+
+        if not not_cls:
+            return
+
+        if any(isinstance(input, not_cls) for input in inputs):
             raise UnsupportedInputs()
 
     @staticmethod
@@ -316,7 +328,7 @@ class NumberPair(Pair):
     def _process_inputs(
         self, actual: Any, expected: Any, *, id: Tuple[Any, ...]
     ) -> Tuple[Union[int, float, complex], Union[int, float, complex]]:
-        self._check_inputs_isinstance(actual, expected, cls=self._NUMBER_TYPES)
+        self._check_inputs_isinstance(actual, expected, cls=self._NUMBER_TYPES, not_cls=bool)
         error_meta, numbers = self._apply_unary(self._to_number, actual, expected, id=id)
         if error_meta:
             raise UnsupportedInputs(error_meta)
@@ -670,9 +682,9 @@ def originate_pairs(
     # We explicitly exclude str's here since they are self-referential and would cause an infinite recursion loop:
     # "a" == "a"[0][0]...
     if (
-        isinstance(actual, collections.abc.Sequence)
+        isinstance(actual, (collections.abc.Sequence, ScriptList))
         and not isinstance(actual, str)
-        and isinstance(expected, collections.abc.Sequence)
+        and isinstance(expected, (collections.abc.Sequence, ScriptList))
         and not isinstance(expected, str)
     ):
         actual_len = len(actual)
@@ -694,7 +706,9 @@ def originate_pairs(
 
         return None, pairs
 
-    elif isinstance(actual, collections.abc.Mapping) and isinstance(expected, collections.abc.Mapping):
+    elif isinstance(actual, (collections.abc.Mapping, ScriptDict)) and isinstance(
+        expected, (collections.abc.Mapping, ScriptDict)
+    ):
         actual_keys = set(actual.keys())
         expected_keys = set(expected.keys())
         if actual_keys != expected_keys:
@@ -711,7 +725,12 @@ def originate_pairs(
             )
             return error_meta, None
 
-        for key in sorted(actual_keys):
+        keys: Collection = actual_keys
+        # Since the origination aborts after the first failure, we try to be deterministic
+        with contextlib.suppress(Exception):
+            keys = sorted(keys)
+
+        for key in keys:
             error_meta, partial_pairs = originate_pairs(
                 actual[key], expected[key], pair_types=pair_types, id=(*id, key), **options
             )
