@@ -8,10 +8,10 @@ $(warning WARNING: No docker user found using results from whoami)
 DOCKER_ORG                = $(shell whoami)
 endif
 
-CUDA_VERSION              = 11.1
+CUDA_VERSION              = 11.2.0
 CUDNN_VERSION             = 8
-BASE_RUNTIME              = ubuntu:18.04
-BASE_DEVEL                = nvidia/cuda:$(CUDA_VERSION)-cudnn$(CUDNN_VERSION)-devel-ubuntu18.04
+BASE_RUNTIME              = ubuntu:20.04
+BASE_DEVEL                = nvidia/cuda:$(CUDA_VERSION)-cudnn$(CUDNN_VERSION)-devel-ubuntu20.04
 
 # The conda channel to use to install cudatoolkit
 CUDA_CHANNEL              = nvidia
